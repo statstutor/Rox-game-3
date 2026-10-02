@@ -178,24 +178,25 @@ function playTaunt() {
   if (!voiceBuf) { sfx.sandwich(); return; }
   if (taunt) return;
   const a = audio(), t = a.currentTime + 0.02;
-  const out = a.createGain(); out.gain.value = 2.6; out.connect(a.destination);
+  const out = a.createGain(); out.gain.value = 3; out.connect(a.destination);
   // ring modulator for the robotic alien buzz, mixed with some dry voice
   const bus = a.createGain(), ring = a.createGain(), dry = a.createGain();
-  ring.gain.value = 0; dry.gain.value = 0.35;
+  ring.gain.value = 0; dry.gain.value = 1;
+  const wet = a.createGain(); wet.gain.value = 0.18; // just a hint of robot buzz
   const ringOsc = a.createOscillator(); ringOsc.frequency.value = 42; ringOsc.connect(ring.gain);
-  bus.connect(ring); ring.connect(out); bus.connect(dry); dry.connect(out);
+  bus.connect(ring); ring.connect(wet); wet.connect(out); bus.connect(dry); dry.connect(out);
   // spacey echo
-  const echo = a.createDelay(1), fb = a.createGain(); echo.delayTime.value = 0.19; fb.gain.value = 0.32;
+  const echo = a.createDelay(1), fb = a.createGain(); echo.delayTime.value = 0.19; fb.gain.value = 0.15;
   out.connect(echo); echo.connect(fb); fb.connect(echo); echo.connect(a.destination);
-  // the chorus: the clip sung at five pitches at once, slightly out of sync, wobbling
-  const voices = [[0.667, 0, -0.7], [1, 0.02, 0], [1.26, 0.035, 0.7], [1.5, 0.05, -0.35], [2, 0.065, 0.35]];
+  // the chorus: the clip at its real pitch up front, with a quieter higher and lower voice behind it
+  const voices = [[1, 0, 0, 0.55], [1.19, 0.012, 0.5, 0.2], [0.84, 0.012, -0.5, 0.2]];
   const srcs = [ringOsc];
   let end = 0;
-  voices.forEach(([rate, delay, pan], i) => {
+  voices.forEach(([rate, delay, pan, vol], i) => {
     const src = a.createBufferSource(); src.buffer = voiceBuf; src.playbackRate.value = rate;
-    const lfo = a.createOscillator(), lg = a.createGain(); lfo.frequency.value = 5 + i * 0.7; lg.gain.value = rate * 0.035;
+    const lfo = a.createOscillator(), lg = a.createGain(); lfo.frequency.value = 5 + i * 0.7; lg.gain.value = rate * 0.006;
     lfo.connect(lg); lg.connect(src.playbackRate);
-    const g = a.createGain(); g.gain.value = 0.3;
+    const g = a.createGain(); g.gain.value = vol;
     let node = g;
     if (a.createStereoPanner) { const pn = a.createStereoPanner(); pn.pan.value = pan; g.connect(pn); node = pn; }
     src.connect(g); node.connect(bus);
