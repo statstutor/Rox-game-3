@@ -321,12 +321,8 @@ function newWave() {
     turtles.push({ x: 60 + c * 58, y: 128 + r * 46, alive: true, hp: r === 0 && wave > 1 ? 2 : 1, wob: Math.random() * 6 });
   diveTimer = 2.5; dir = 1; tSpeed = 26 + wave * 8; spits = []; bolts = []; lasers = [];
 }
-// test link: opening the game with #wave8 (or any #waveN) starts the next game on that wave, once
-let testWave = 0, testRun = false;
-{ const m = /^#wave(\d{1,2})$/.exec(location.hash); if (m && +m[1] > 1) testWave = +m[1]; }
 function reset() {
-  testRun = testWave > 0;
-  sands = []; sandTimer = 10; score = 0; lives = 3; wave = testWave || 1; testWave = 0; baby.x = W / 2; baby.hurt = 0; newWave(); state = 'play'; startMusic(); }
+  sands = []; sandTimer = 10; score = 0; lives = 3; wave = 1; baby.x = W / 2; baby.hurt = 0; newWave(); state = 'play'; startMusic(); }
 
 function zigzag(x, y) { const pts = []; for (let i = 0; i < 6; i++) pts.push((Math.random() - 0.5) * 10); return { x, y, pts, vy: -520 }; }
 function fireBolts() {
@@ -892,7 +888,6 @@ function renderBoard(docs) {
 }
 async function submitScore() {
   const note = $('saveNote');
-  if (testRun) { note.textContent = 'Test run: this score is not posted.'; return; }
   if (!db || !myId) { note.textContent = db === null ? 'Scores save to the leaderboard when you are signed in to claude.ai.' : ''; return; }
   if (canWrite === false) { note.textContent = 'Your link can view the leaderboard but not post to it.'; return; }
   if (score <= 0) return;
