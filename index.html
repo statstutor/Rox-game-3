@@ -834,18 +834,7 @@ $('name').addEventListener('input', () => {
   if ($('name').value.trim().toLowerCase() === 'baby zuccio') zapName();
   playerName = $('name').value.trim().slice(0, 12);
   try { localStorage.setItem('bvt-name', playerName); } catch (e) {}
-  clearTimeout(nameTimer); nameTimer = setTimeout(syncName, 700); // rename on the leaderboard once typing pauses
 });
-let nameTimer = null, nameSync = Promise.resolve();
-function syncName() {
-  // one write at a time; only touches the leaderboard if this player already has a score there
-  nameSync = nameSync.then(async () => {
-    if (!db || !myId || canWrite === false) return;
-    const ref = db.doc('scores/' + myId), name = playerName || 'Player';
-    const snap = await ref.get();
-    if (snap.exists && snap.data().name !== name) await ref.update({ name });
-  }).catch(() => {});
-}
 
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') { if (e.key === 'Enter') { e.target.blur(); play(); } return; }
@@ -871,48 +860,44 @@ function fit() {
 }
 addEventListener('resize', fit); fit();
 
-// ---------- SHARED LEADERBOARD ----------
-let db = null, myId = null, canWrite = null;
-function renderBoard(docs) {
+// ---------- LEADERBOARD (kept on this device) ----------
+// one row per name; each name keeps its best score
+const LB_KEY = 'bvt-board-1';
+let lastName = null;
+function loadBoard() {
+  try { const v = JSON.parse(localStorage.getItem(LB_KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+}
+function saveBoard(list) { try { localStorage.setItem(LB_KEY, JSON.stringify(list)); return true; } catch (e) { return false; } }
+function renderBoard() {
+  const list = loadBoard().sort((x, y) => y.score - x.score).slice(0, 20);
   const ol = $('rows'); ol.textContent = '';
-  docs.forEach((d, i) => {
-    const v = d.data() || {};
+  list.forEach((v, i) => {
     const li = document.createElement('li');
-    if (d.id === myId) li.className = 'me';
+    if (v.name === lastName) li.className = 'me';
     const a = document.createElement('span'); a.textContent = i + 1;
-    const n = document.createElement('span'); n.className = 'nm'; n.textContent = String(v.name || 'Player').slice(0, 12) + (d.id === myId ? ' (you)' : '');
+    const n = document.createElement('span'); n.className = 'nm'; n.textContent = String(v.name || 'Player').slice(0, 12);
     const sc = document.createElement('span'); sc.textContent = (+v.score || 0) + ' · W' + (+v.wave || 1);
     li.append(a, n, sc); ol.append(li);
   });
-  $('boardNote').textContent = docs.length ? 'Top 20 · your best score counts' : 'No scores yet. Play a round to be first.';
+  $('boardNote').textContent = list.length ? 'Top 20 on this device · each name keeps its best score' : 'No scores yet. Play a round to be first.';
 }
-async function submitScore() {
+function submitScore() {
   const note = $('saveNote');
-  if (!db || !myId) { note.textContent = db === null ? 'Scores save to the leaderboard when you are signed in to claude.ai.' : ''; return; }
-  if (canWrite === false) { note.textContent = 'Your link can view the leaderboard but not post to it.'; return; }
   if (score <= 0) return;
-  const ref = db.doc('scores/' + myId);
-  try {
-    const snap = await ref.get();
-    const prev = snap.exists ? +(snap.data().score || 0) : 0;
-    if (score > prev) {
-      await ref.set({ name: playerName || 'Player', score, wave, at: Date.now() });
-      note.textContent = prev ? 'New personal best on the leaderboard!' : 'Score posted to the leaderboard!';
-    } else note.textContent = 'Your leaderboard best is still ' + prev + '.';
-  } catch (e) {
-    canWrite = false;
-    note.textContent = 'Could not post your score: your link can view the leaderboard but not post to it.';
-  }
+  const name = playerName || 'Player', list = loadBoard();
+  const row = list.find(r => r.name === name);
+  const prev = row ? +row.score || 0 : 0;
+  lastName = name;
+  if (score > prev) {
+    if (row) Object.assign(row, { score, wave, at: Date.now() });
+    else list.push({ name, score, wave, at: Date.now() });
+    list.sort((x, y) => y.score - x.score);
+    note.textContent = saveBoard(list.slice(0, 50))
+      ? (prev ? 'New personal best on the leaderboard!' : 'Score added to the leaderboard!')
+      : 'This browser is not letting the game save scores.';
+  } else note.textContent = name + "'s best is still " + prev + '.';
+  renderBoard();
 }
-(async () => {
-  if (!window.claude?.use) { $('boardNote').textContent = 'The leaderboard works when the game is opened from its claude.ai link.'; return; }
-  const [d, u] = await Promise.all([claude.use('db'), claude.use('user')]);
-  if (!d) { $('boardNote').textContent = 'Sign in to claude.ai to see the leaderboard.'; return; }
-  db = d;
-  if (u) { myId = await u.id(); canWrite = await u.can('data.write'); }
-  db.collection('scores').orderBy('score', 'desc').limit(20).onSnapshot(
-    snap => renderBoard(snap.docs),
-    () => { $('boardNote').textContent = 'The leaderboard stopped updating. Reload the page to try again.'; }
-  );
-})();
+$('lb').addEventListener('click', renderBoard);
+renderBoard();
 </script>
