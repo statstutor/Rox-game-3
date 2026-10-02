@@ -180,7 +180,7 @@ const sfx = {
 
 // ---------- GAME ----------
 let state = 'title', score = 0, lives = 3, wave = 1, best = 0;
-try { best = +localStorage.getItem('bvt-best') || 0; } catch (e) {}
+try { best = +localStorage.getItem('bvt-best-2') || 0; } catch (e) {}
 const baby = { x: W / 2, y: H - 60, w: 50, cool: 0, lcool: 0, hurt: 0 };
 let turtles = [], bolts = [], lasers = [], spits = [], pops = [], clouds = [];
 let dir = 1, tSpeed = 30, shake = 0, diveTimer = 3;
@@ -304,7 +304,7 @@ function ouch() {
   lives--; baby.hurt = 1.5; shake = 0.3; sfx.ouch();
   if (lives <= 0) {
     state = 'over'; stopMusic();
-    if (score > best) { best = score; try { localStorage.setItem('bvt-best', best); } catch (e) {} }
+    if (score > best) { best = score; try { localStorage.setItem('bvt-best-2', best); } catch (e) {} }
     show('over'); submitScore();
   }
 }
