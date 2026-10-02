@@ -616,13 +616,7 @@ function drawSara(b) {
   // head (bald, with a shine)
   ctx.fillStyle = b.flash > 0 ? '#ffffff' : '#ffd9b8';
   ctx.beginPath(); ctx.arc(0, 0, 52, 0, 7); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#ffffffaa'; ctx.beginPath(); ctx.ellipse(-26, -28, 10, 5, -0.7, 0, 7); ctx.fill();
-  // a tiny bit of flat baby hair lying along the top of her head
-  ctx.strokeStyle = '#8a5a35'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-  [[1.30, 1.40], [1.40, 1.49], [1.51, 1.60], [1.61, 1.70], [1.36, 1.45, 41], [1.55, 1.64, 41]].forEach(([a0, a1, r = 46]) => {
-    ctx.beginPath(); ctx.arc(0, 0, r, a0 * Math.PI, a1 * Math.PI); ctx.stroke();
-  });
-  ctx.strokeStyle = '#1d2a44'; ctx.lineWidth = 3;
+  ctx.fillStyle = '#ffffffaa'; ctx.beginPath(); ctx.ellipse(-20, -34, 13, 6, -0.5, 0, 7); ctx.fill();
   // little ears
   ctx.fillStyle = '#ffd9b8'; [-1, 1].forEach(sd => { ctx.beginPath(); ctx.arc(sd * 54, 4, 9, sd > 0 ? -1.4 : 1.7, sd > 0 ? 1.4 : 4.6); ctx.fill(); ctx.stroke(); });
   // cheeks
