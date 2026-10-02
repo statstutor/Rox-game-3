@@ -31,8 +31,27 @@
   }
   button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
   button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  .bar .btns { display: flex; gap: 8px; }
   #wrap { flex: 1; min-height: 0; width: 100%; display: flex; justify-content: center; align-items: center; }
-  canvas { max-width: 100%; max-height: 100%; aspect-ratio: 480 / 640; border: 3px solid var(--ink); border-radius: 12px; background: var(--sky-top); }
+  #stage { position: relative; }
+  canvas { display: block; width: 100%; height: 100%; box-sizing: border-box; border: 3px solid var(--ink); border-radius: 12px; background: var(--sky-top); }
+  .ov { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 16px 9%; box-sizing: border-box; }
+  .ov.center { justify-content: center; }
+  .ov.dim { background: #1d2a4466; border-radius: 12px; }
+  .card { background: var(--card); border: 3px solid var(--ink); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; align-items: center; width: min(320px, 100%); box-sizing: border-box; text-align: center; }
+  .card h2 { font-family: var(--display); margin: 0; font-size: 1.4rem; }
+  .card p { margin: 0; font-weight: 800; }
+  .ov .big { font-size: 1.1rem; padding: 10px 24px; width: min(240px, 100%); }
+  label { font-weight: 800; font-size: .85rem; display: flex; gap: 8px; align-items: center; }
+  input { font: 800 1rem var(--body); color: var(--ink); background: #fff; border: 3px solid var(--ink); border-radius: 8px; padding: 4px 8px; width: 9em; }
+  .tap { font-size: .85rem; opacity: .8; }
+  #boardCard { max-height: 88%; justify-content: flex-start; }
+  #rows { list-style: none; margin: 0; padding: 0; width: 100%; overflow-y: auto; min-height: 0; flex: 1; }
+  #rows li { display: grid; grid-template-columns: 2em 1fr auto; gap: 8px; padding: 6px 4px; border-bottom: 2px dashed #1d2a4433; font-weight: 800; text-align: left; font-variant-numeric: tabular-nums; }
+  #rows li.me { background: var(--sun); border-radius: 6px; }
+  #rows li span:first-child { font-family: var(--display); }
+  #rows li .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .note { font-size: .8rem; font-weight: 600; }
   .touch { display: flex; gap: 8px; width: 100%; max-width: 480px; }
   .touch button { flex: 1; padding: 12px 4px; font-size: .8rem; }
   .help { font-size: .8rem; margin: 0; text-align: center; }
@@ -41,10 +60,39 @@
 
 <div class="bar">
   <h1>Baby vs Turtles</h1>
-  <button id="music">Music: ON</button>
+  <div class="btns">
+    <button id="pause" hidden>Pause</button>
+    <button id="music">Music: ON</button>
+  </div>
 </div>
-<div id="wrap"><canvas id="c" width="480" height="640"></canvas></div>
-<p class="help">← → move · Space = hand lightning · X or ↑ = eye lasers</p>
+<div id="wrap"><div id="stage">
+  <canvas id="c" width="480" height="640"></canvas>
+  <div class="ov" id="menu">
+    <label for="name">Your name <input id="name" maxlength="12" placeholder="Baby" autocomplete="off"></label>
+    <button class="big" id="play">Play</button>
+    <button class="big" id="lb">Leaderboard</button>
+  </div>
+  <div class="ov center dim" id="board" hidden>
+    <div class="card" id="boardCard">
+      <h2>Leaderboard</h2>
+      <ol id="rows"></ol>
+      <p class="note" id="boardNote">Loading scores…</p>
+      <button id="back">Back</button>
+    </div>
+  </div>
+  <div class="ov center dim" id="paused" hidden>
+    <div class="card"><h2>Paused</h2><button class="big" id="resume">Resume</button><p class="tap">or press P</p></div>
+  </div>
+  <div class="ov center dim" id="over" hidden>
+    <div class="card">
+      <h2>Game over</h2>
+      <p id="overScore"></p>
+      <p class="note" id="saveNote"></p>
+      <p class="tap">Tap anywhere for the main menu</p>
+    </div>
+  </div>
+</div></div>
+<p class="help">← → move · Space = hand lightning · X or ↑ = eye lasers · P = pause</p>
 <div class="touch">
   <button id="tl">◀</button>
   <button id="tz">⚡ Zap</button>
@@ -118,7 +166,7 @@ const musicBtn = document.getElementById('music');
 musicBtn.onclick = () => {
   musicOn = !musicOn;
   musicBtn.textContent = 'Music: ' + (musicOn ? 'ON' : 'OFF');
-  if (musicOn && state !== 'title') startMusic(); else stopMusic();
+  if (musicOn && state === 'play') startMusic(); else stopMusic();
   musicBtn.blur();
 };
 const sfx = {
@@ -218,6 +266,7 @@ function ouch() {
   if (lives <= 0) {
     state = 'over'; stopMusic();
     if (score > best) { best = score; try { localStorage.setItem('bvt-best', best); } catch (e) {} }
+    show('over'); submitScore();
   }
 }
 
@@ -318,15 +367,10 @@ function draw() {
   text('♥'.repeat(Math.max(lives, 0)), W - 12, 28, 18, '#ff2d55', 'right');
 
   if (state === 'title') {
-    text('BABY', W / 2, 220, 56, '#ff6b1a');
-    text('VS TURTLES', W / 2, 280, 36, '#3f9b4a');
-    const b = baby.x; baby.x = W / 2; drawBaby(); baby.x = b;
-    text('Tap or press Space to start', W / 2, 420, 16);
-    text('Best: ' + best, W / 2, 450, 14);
-  } else if (state === 'over') {
-    text('GAME OVER', W / 2, 260, 44, '#ff2d55');
-    text('Score ' + score + '   Best ' + best, W / 2, 310, 18);
-    text('Tap or press Space to play again', W / 2, 360, 15);
+    text('BABY', W / 2, 150, 56, '#ff6b1a');
+    text('VS TURTLES', W / 2, 205, 36, '#3f9b4a');
+    const bx = baby.x, by = baby.y; baby.x = W / 2; baby.y = 310; drawBaby(); baby.x = bx; baby.y = by;
+    text('Your best: ' + best, W / 2, 380, 14);
   }
 }
 
@@ -337,18 +381,107 @@ function loop(now) {
 }
 requestAnimationFrame(loop);
 
-function startIfIdle() { if (state !== 'play') { audio(); reset(); return true; } return false; }
+// ---------- SCREENS ----------
+const $ = id => document.getElementById(id);
+const screens = ['menu', 'board', 'paused', 'over'];
+function show(name) {
+  screens.forEach(n => $(n).hidden = n !== name);
+  $('pause').hidden = !(state === 'play' || state === 'paused');
+  $('pause').textContent = state === 'paused' ? 'Resume' : 'Pause';
+  if (name === 'over') {
+    $('overScore').textContent = 'Score ' + score + ' · Wave ' + wave;
+    $('saveNote').textContent = '';
+  }
+}
+function clearKeys() { for (const k in keys) keys[k] = false; }
+function play() { audio(); clearKeys(); reset(); show(null); }
+function toMenu() { state = 'title'; stopMusic(); clearKeys(); show('menu'); }
+function togglePause() {
+  if (state === 'play') { state = 'paused'; stopMusic(); clearKeys(); show('paused'); }
+  else if (state === 'paused') { state = 'play'; last = performance.now(); startMusic(); show(null); }
+}
+$('play').onclick = play;
+$('lb').onclick = () => show('board');
+$('back').onclick = () => show('menu');
+$('resume').onclick = togglePause;
+$('pause').onclick = e => { togglePause(); e.currentTarget.blur(); };
+$('over').addEventListener('pointerdown', toMenu);
+document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play') togglePause(); });
+
+let playerName = '';
+try { playerName = localStorage.getItem('bvt-name') || ''; } catch (e) {}
+$('name').value = playerName;
+$('name').addEventListener('input', () => {
+  playerName = $('name').value.trim().slice(0, 12);
+  try { localStorage.setItem('bvt-name', playerName); } catch (e) {}
+});
+
 addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') { if (e.key === 'Enter') { e.target.blur(); play(); } return; }
   if ([' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp'].includes(e.key)) e.preventDefault();
-  if (e.key === ' ' && startIfIdle()) return;
-  keys[e.key] = true;
+  if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') { togglePause(); return; }
+  if (e.key === ' ' && state === 'over') { toMenu(); return; }
+  if (e.key === ' ' && state === 'title' && $('board').hidden) { play(); return; }
+  if (state === 'play') keys[e.key] = true;
 });
 addEventListener('keyup', e => { keys[e.key] = false; });
-cv.addEventListener('pointerdown', () => startIfIdle());
 function hold(id, k) {
-  const el = document.getElementById(id);
-  el.addEventListener('pointerdown', e => { e.preventDefault(); if (!startIfIdle()) keys[k] = true; });
+  const el = $(id);
+  el.addEventListener('pointerdown', e => { e.preventDefault(); if (state === 'play') keys[k] = true; });
   ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => el.addEventListener(ev, () => keys[k] = false));
 }
 hold('tl', 'L'); hold('tr', 'R'); hold('tz', 'Z'); hold('tx', 'X');
+
+// fit the stage to the space available, keeping 3:4
+function fit() {
+  const r = $('wrap').getBoundingClientRect();
+  const w = Math.min(r.width, r.height * 480 / 640);
+  $('stage').style.width = w + 'px'; $('stage').style.height = (w * 640 / 480) + 'px';
+}
+addEventListener('resize', fit); fit();
+
+// ---------- SHARED LEADERBOARD ----------
+let db = null, myId = null, canWrite = null;
+function renderBoard(docs) {
+  const ol = $('rows'); ol.textContent = '';
+  docs.forEach((d, i) => {
+    const v = d.data() || {};
+    const li = document.createElement('li');
+    if (d.id === myId) li.className = 'me';
+    const a = document.createElement('span'); a.textContent = i + 1;
+    const n = document.createElement('span'); n.className = 'nm'; n.textContent = String(v.name || 'Baby').slice(0, 12) + (d.id === myId ? ' (you)' : '');
+    const sc = document.createElement('span'); sc.textContent = (+v.score || 0) + ' · W' + (+v.wave || 1);
+    li.append(a, n, sc); ol.append(li);
+  });
+  $('boardNote').textContent = docs.length ? 'Top 20 · your best score counts' : 'No scores yet. Play a round to be first.';
+}
+async function submitScore() {
+  const note = $('saveNote');
+  if (!db || !myId) { note.textContent = db === null ? 'Scores save to the leaderboard when you are signed in to claude.ai.' : ''; return; }
+  if (canWrite === false) { note.textContent = 'Your link can view the leaderboard but not post to it.'; return; }
+  if (score <= 0) return;
+  const ref = db.doc('scores/' + myId);
+  try {
+    const snap = await ref.get();
+    const prev = snap.exists ? +(snap.data().score || 0) : 0;
+    if (score > prev) {
+      await ref.set({ name: playerName || 'Baby', score, wave, at: Date.now() });
+      note.textContent = prev ? 'New personal best on the leaderboard!' : 'Score posted to the leaderboard!';
+    } else note.textContent = 'Your leaderboard best is still ' + prev + '.';
+  } catch (e) {
+    canWrite = false;
+    note.textContent = 'Could not post your score: your link can view the leaderboard but not post to it.';
+  }
+}
+(async () => {
+  if (!window.claude?.use) { $('boardNote').textContent = 'The leaderboard works when the game is opened from its claude.ai link.'; return; }
+  const [d, u] = await Promise.all([claude.use('db'), claude.use('user')]);
+  if (!d) { $('boardNote').textContent = 'Sign in to claude.ai to see the leaderboard.'; return; }
+  db = d;
+  if (u) { myId = await u.id(); canWrite = await u.can('data.write'); }
+  db.collection('scores').orderBy('score', 'desc').limit(20).onSnapshot(
+    snap => renderBoard(snap.docs),
+    () => { $('boardNote').textContent = 'The leaderboard stopped updating. Reload the page to try again.'; }
+  );
+})();
 </script>
