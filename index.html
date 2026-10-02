@@ -178,7 +178,7 @@ function playTaunt() {
   if (!voiceBuf) { sfx.sandwich(); return; }
   if (taunt) return;
   const a = audio(), t = a.currentTime + 0.02;
-  const out = a.createGain(); out.gain.value = 3; out.connect(a.destination);
+  const out = a.createGain(); out.gain.value = 2; out.connect(a.destination);
   // ring modulator for the robotic alien buzz, mixed with some dry voice
   const bus = a.createGain(), ring = a.createGain(), dry = a.createGain();
   ring.gain.value = 0; dry.gain.value = 1;
@@ -186,8 +186,9 @@ function playTaunt() {
   const ringOsc = a.createOscillator(); ringOsc.frequency.value = 42; ringOsc.connect(ring.gain);
   bus.connect(ring); ring.connect(wet); wet.connect(out); bus.connect(dry); dry.connect(out);
   // spacey echo
-  const echo = a.createDelay(1), fb = a.createGain(); echo.delayTime.value = 0.19; fb.gain.value = 0.15;
-  out.connect(echo); echo.connect(fb); fb.connect(echo); echo.connect(a.destination);
+  const echo = a.createDelay(1), fb = a.createGain(); echo.delayTime.value = 0.19; fb.gain.value = 0.05;
+  const echoMix = a.createGain(); echoMix.gain.value = 0.45; // echo sits low behind the voice
+  out.connect(echoMix); echoMix.connect(echo); echo.connect(fb); fb.connect(echo); echo.connect(a.destination);
   // the chorus: the clip at its real pitch up front, with a quieter higher and lower voice behind it
   const voices = [[1, 0, 0, 0.55], [1.19, 0.012, 0.5, 0.2], [0.84, 0.012, -0.5, 0.2]];
   const srcs = [ringOsc];
