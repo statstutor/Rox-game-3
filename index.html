@@ -1,4 +1,4 @@
-<title>Baby vs Turtles</title>
+<title>Baby Zuccio vs Turtles</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Nunito:wght@600;800&display=swap">
 <style>
   /* Layout: one sky-blue screen, game canvas centered, controls under it. Single bright look in both themes. */
@@ -59,7 +59,7 @@
 </style>
 
 <div class="bar">
-  <h1>Baby vs Turtles</h1>
+  <h1>Baby Zuccio vs Turtles</h1>
   <div class="btns">
     <button id="pause" hidden>Pause</button>
     <button id="music">Music: ON</button>
@@ -68,7 +68,7 @@
 <div id="wrap"><div id="stage">
   <canvas id="c" width="480" height="640"></canvas>
   <div class="ov" id="menu">
-    <label for="name">Your name <input id="name" maxlength="12" placeholder="Baby" autocomplete="off"></label>
+    <label for="name">Your name <input id="name" maxlength="12" placeholder="Player" autocomplete="off"></label>
     <button class="big" id="play">Play</button>
     <button class="big" id="lb">Leaderboard</button>
   </div>
@@ -367,7 +367,7 @@ function draw() {
   text('♥'.repeat(Math.max(lives, 0)), W - 12, 28, 18, '#ff2d55', 'right');
 
   if (state === 'title') {
-    text('BABY', W / 2, 150, 56, '#ff6b1a');
+    text('BABY ZUCCIO', W / 2, 150, 42, '#ff6b1a');
     text('VS TURTLES', W / 2, 205, 36, '#3f9b4a');
     const bx = baby.x, by = baby.y; baby.x = W / 2; baby.y = 310; drawBaby(); baby.x = bx; baby.y = by;
     text('Your best: ' + best, W / 2, 380, 14);
@@ -449,7 +449,7 @@ function renderBoard(docs) {
     const li = document.createElement('li');
     if (d.id === myId) li.className = 'me';
     const a = document.createElement('span'); a.textContent = i + 1;
-    const n = document.createElement('span'); n.className = 'nm'; n.textContent = String(v.name || 'Baby').slice(0, 12) + (d.id === myId ? ' (you)' : '');
+    const n = document.createElement('span'); n.className = 'nm'; n.textContent = String(v.name || 'Player').slice(0, 12) + (d.id === myId ? ' (you)' : '');
     const sc = document.createElement('span'); sc.textContent = (+v.score || 0) + ' · W' + (+v.wave || 1);
     li.append(a, n, sc); ol.append(li);
   });
@@ -465,7 +465,7 @@ async function submitScore() {
     const snap = await ref.get();
     const prev = snap.exists ? +(snap.data().score || 0) : 0;
     if (score > prev) {
-      await ref.set({ name: playerName || 'Baby', score, wave, at: Date.now() });
+      await ref.set({ name: playerName || 'Player', score, wave, at: Date.now() });
       note.textContent = prev ? 'New personal best on the leaderboard!' : 'Score posted to the leaderboard!';
     } else note.textContent = 'Your leaderboard best is still ' + prev + '.';
   } catch (e) {
