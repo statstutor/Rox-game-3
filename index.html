@@ -43,7 +43,13 @@
   .card h2 { font-family: var(--display); margin: 0; font-size: 1.4rem; }
   .card p { margin: 0; font-weight: 800; }
   .ov .big { font-size: 1.1rem; padding: 10px 24px; width: min(240px, 100%); }
-  label { font-weight: 800; font-size: .85rem; display: flex; gap: 8px; align-items: center; }
+  label { font-weight: 800; font-size: .85rem; display: flex; gap: 8px; align-items: center; position: relative; }
+  #zapfx { position: absolute; right: 2.4em; top: -64px; font-size: 52px; opacity: 0; pointer-events: none; filter: drop-shadow(0 0 8px #fff36b); }
+  .zapping #zapfx { animation: strike .7s ease-in forwards; }
+  .zapping input { animation: zapflash .7s; }
+  @keyframes strike { 0% { opacity: 1; transform: translateY(-50px) scale(.6) rotate(-10deg); } 35% { opacity: 1; transform: translateY(46px) scale(1.25); } 100% { opacity: 0; transform: translateY(46px) scale(1.7); } }
+  @keyframes zapflash { 30% { background: #fff36b; box-shadow: 0 0 28px #ffe14d; transform: translateX(-4px); } 42% { transform: translateX(4px); } 55% { transform: translateX(-2px); } 70% { transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .zapping #zapfx, .zapping input { animation: none; } }
   input { font: 800 1rem var(--body); color: var(--ink); background: #fff; border: 3px solid var(--ink); border-radius: 8px; padding: 4px 8px; width: 9em; }
   .tap { font-size: .85rem; opacity: .8; }
   #boardCard { max-height: 88%; justify-content: flex-start; }
@@ -69,7 +75,7 @@
 <div id="wrap"><div id="stage">
   <canvas id="c" width="480" height="720"></canvas>
   <div class="ov" id="menu">
-    <label for="name">Your name <input id="name" maxlength="12" placeholder="Player" autocomplete="off"></label>
+    <label for="name" id="nameLabel">Your name <input id="name" maxlength="12" placeholder="Player" autocomplete="off"><span id="zapfx" aria-hidden="true">⚡</span></label>
     <button class="big" id="play">Play</button>
     <button class="big" id="lb">Leaderboard</button>
   </div>
@@ -146,15 +152,22 @@ const semi = n => 220 * Math.pow(2, n / 12);
 const MEL = [12,null,12,13,12,null,11,12, 15,null,15,16,15,null,13,15, 19,18,19,18,19,null,15,null, 17,15,13,12,11,12,13,null];
 const BASS = [0,null,7,null,0,null,7,null, 3,null,10,null,3,null,10,null, 7,null,14,null,7,null,14,null, 5,null,8,null,7,null,-1,null];
 function scheduleMusic() {
-  const a = audio(), spb = 60 / (boss ? 200 : 176) / 4; // 176 bpm sixteenths
+  const fight = boss && boss.mode !== 'dead'; // intense mode until the boss is beaten
+  const a = audio(), spb = 60 / (fight ? 208 : 176) / 4; // 176 bpm sixteenths, faster in boss fights
   while (nextNote < a.currentTime + 0.12) {
     const s = step % 32, bar = Math.floor(step / 32) % 4;
-    const up = (bar === 3 ? 5 : bar === 2 ? 2 : 0) + (boss ? 3 : 0); // key change for drama
+    const up = (bar === 3 ? 5 : bar === 2 ? 2 : 0) + (fight ? 3 : 0); // key change for drama
     if (MEL[s] !== null) tone(semi(MEL[s] + up), nextNote, spb * 1.6, 'sawtooth', 0.09, { kazoo: true });
     if (BASS[s] !== null) tone(semi(BASS[s] + up - 24), nextNote, spb * 1.4, 'square', 0.08);
     if (s % 4 === 0) tone(150, nextNote, 0.12, 'sine', 0.35, { slide: 40 });
     if (s % 8 === 4) noise(nextNote, 0.1, 0.18, 1500);
     if (s % 2 === 1) noise(nextNote, 0.03, 0.05, 7000);
+    if (fight) { // extra layers: octave-up lead, pounding 8th-note kicks, pumping bass, crash on each bar
+      if (MEL[s] !== null) tone(semi(MEL[s] + up + 12), nextNote, spb * 1.2, 'square', 0.035);
+      if (s % 2 === 0 && s % 4 !== 0) tone(140, nextNote, 0.1, 'sine', 0.3, { slide: 40 });
+      if (BASS[s] === null) tone(semi(BASS[s - 1] + up - 24), nextNote, spb * 0.8, 'square', 0.05);
+      if (s === 0) noise(nextNote, 0.6, 0.12, 4000);
+    }
     if (s === 31 && bar === 3) tone(semi(24 + up), nextNote, 0.3, 'square', 0.06, { slide: semi(36 + up) }); // slide whistle
     nextNote += spb; step++;
   }
@@ -229,6 +242,21 @@ const sfx = {
   zap() { const t = audio().currentTime; noise(t, 0.15, 0.12, 3000); tone(900, t, 0.12, 'square', 0.05, { slide: 200 }); },
   laser() { const t = audio().currentTime; tone(1800, t, 0.18, 'sawtooth', 0.06, { slide: 300 }); },
   bonk() { const t = audio().currentTime; tone(500, t, 0.15, 'triangle', 0.25, { slide: 120 }); },
+  snort() { // Capy's piggy snort before the laser
+    const a = audio(), t = a.currentTime;
+    [0, 0.24].forEach(d => {
+      const len = Math.floor(a.sampleRate * 0.2), buf = a.createBuffer(1, len, a.sampleRate), ch = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1;
+      const src = a.createBufferSource(); src.buffer = buf;
+      const bp = a.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 3;
+      const g = a.createGain(); g.gain.value = 0;
+      for (let k = 0; k < 7; k++) { g.gain.setValueAtTime(0.9, t + d + k * 0.026); g.gain.setValueAtTime(0.08, t + d + k * 0.026 + 0.013); }
+      g.gain.setValueAtTime(0, t + d + 0.19);
+      src.connect(bp); bp.connect(g); g.connect(a.destination); src.start(t + d);
+      tone(130, t + d, 0.17, 'sawtooth', 0.07, { slide: 75 });
+    });
+  },
+  cry() { const t = audio().currentTime; tone(520, t, 0.35, 'sawtooth', 0.09, { kazoo: true, slide: 700 }); tone(700, t + 0.33, 0.45, 'sawtooth', 0.09, { kazoo: true, slide: 430 }); },
   dive() { const t = audio().currentTime; tone(1200, t, 0.45, 'sine', 0.08, { slide: 300 }); },
   sandwich() { const t = audio().currentTime; [0, 4, 7, 12].forEach((n, i) => tone(semi(n + 12), t + i * 0.05, 0.12, 'square', 0.05)); },
   splat() { const t = audio().currentTime; noise(t, 0.2, 0.2, 400); tone(300, t, 0.3, 'triangle', 0.2, { slide: 900 }); },
@@ -244,7 +272,7 @@ const baby = { x: W / 2, y: H - 60, w: 50, cool: 0, lcool: 0, hurt: 0 };
 let turtles = [], bolts = [], lasers = [], spits = [], pops = [], clouds = [];
 let dir = 1, tSpeed = 30, shake = 0, diveTimer = 3;
 // the flying baguette sandwich: zips across the top; shoot it and catch it for a heart
-let sand = null, sandTimer = 10;
+let sands = [], sandTimer = 10;
 // every 4th wave is a boss wave: the Pug
 let boss = null, banner = null;
 const MAX_LIVES = 3;
@@ -258,8 +286,9 @@ function newWave() {
   turtles = []; boss = null;
   if (wave % 4 === 0) { // boss wave
     const lvl = wave / 4, hp = 50 + lvl * 25;
-    boss = { x: W / 2, y: -90, homeY: 150, hp, max: hp, vx: 90 + lvl * 15, t: 0, mode: 'enter', modeT: 0, attackT: 2.5, flash: 0, beamX: 0, lvl, dying: 0 };
-    banner = { text: 'BOSS WAVE: THE PUG', life: 2.5 };
+    const kind = lvl % 2 ? 'pug' : 'sara'; // wave 4: Capy, wave 8: Sara, then they take turns
+    boss = { kind, name: kind === 'pug' ? 'CAPY' : 'SARA', x: W / 2, y: -90, homeY: 150, hp, max: hp, vx: 90 + lvl * 15, t: 0, mode: 'enter', modeT: 0, attackT: 2.5, flash: 0, beamX: 0, lvl, dying: 0 };
+    banner = { text: kind === 'pug' ? 'BOSS: CAPY THE PUG' : 'BOSS: BABY SARA', life: 2.5 };
     spits = []; bolts = []; lasers = []; diveTimer = 99; return;
   }
   const rows = Math.min(3 + wave, 6), cols = 7;
@@ -270,7 +299,7 @@ function newWave() {
     turtles.push({ x: 60 + c * 58, y: 128 + r * 46, alive: true, hp: r === 0 && wave > 1 ? 2 : 1, wob: Math.random() * 6 });
   diveTimer = 2.5; dir = 1; tSpeed = 26 + wave * 8; spits = []; bolts = []; lasers = [];
 }
-function reset() { sand = null; sandTimer = 10; score = 0; lives = 3; wave = 1; baby.x = W / 2; baby.hurt = 0; newWave(); state = 'play'; startMusic(); }
+function reset() { sands = []; sandTimer = 10; score = 0; lives = 3; wave = 1; baby.x = W / 2; baby.hurt = 0; newWave(); state = 'play'; startMusic(); }
 
 function zigzag(x, y) { const pts = []; for (let i = 0; i < 6; i++) pts.push((Math.random() - 0.5) * 10); return { x, y, pts, vy: -520 }; }
 function fireBolts() {
@@ -349,39 +378,47 @@ function update(dt) {
   if (boss) updateBoss(dt);
   if (banner && (banner.life -= dt) <= 0) banner = null;
 
-  // baguette sandwich
-  if (!sand) {
+  // baguette sandwiches (two at once from wave 5)
+  if (!sands.length) {
     sandTimer -= dt;
     if (sandTimer <= 0) {
-      const from = Math.random() < 0.5 ? -1 : 1;
-      sand = { x: from < 0 ? -50 : W + 50, y: 50, vx: -from * (190 + wave * 15), passes: 2 + Math.floor(Math.random() * 3), falling: false, vy: 0, spin: 0, t: 0 };
+      const from = Math.random() < 0.5 ? -1 : 1, n = wave >= 5 ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        const side = i ? -from : from; // the second one comes from the other side
+        sands.push({ x: side < 0 ? -50 : W + 50, y: 50, vx: -side * (190 + wave * 15) * (i ? 0.85 : 1), passes: 2 + Math.floor(Math.random() * 3), falling: false, vy: 0, spin: 0, t: i * 1.7 });
+      }
       playTaunt();
     }
-  } else if (!sand.falling) {
-    sand.t += dt; sand.x += sand.vx * dt; sand.y = 50 + Math.sin(sand.t * 6) * 4;
-    if ((sand.vx > 0 && sand.x > W + 50) || (sand.vx < 0 && sand.x < -50)) {
-      if (--sand.passes <= 0) { sand = null; sandTimer = 14 + Math.random() * 10; stopTaunt(); }
-      else { sand.vx *= -1; playTaunt(); }
-    }
-  } else { // knocked out of the sky: catch it!
-    sand.vy = Math.min(sand.vy + 260 * dt, 260); sand.y += sand.vy * dt; sand.spin += dt * 5;
-    if (Math.abs(sand.x - baby.x) < 40 && Math.abs(sand.y - (baby.y - 6)) < 36) {
-      if (lives < MAX_LIVES) { lives++; pops.push({ x: sand.x, y: sand.y - 30, life: 0.8, text: '+1 ♥' }); }
-      else { score += 500; pops.push({ x: sand.x, y: sand.y - 30, life: 0.8, text: '+500' }); }
-      sfx.yum(); sand = null; sandTimer = 16 + Math.random() * 10;
-    } else if (sand.y > H + 30) { sand = null; sandTimer = 16 + Math.random() * 10; }
   }
-  const hitSand = (x, w) => {
-    if (!sand || sand.falling || Math.abs(x - sand.x) > w) return false;
-    stopTaunt(); sand.falling = true; sand.vy = -60; score += 100 * wave; shake = 0.15;
-    pops.push({ x: sand.x, y: sand.y + 20, life: 0.6, text: 'SPLAT!' }); sfx.splat();
+  sands.forEach(sd => {
+    if (!sd.falling) {
+      sd.t += dt; sd.x += sd.vx * dt; sd.y = 50 + Math.sin(sd.t * 6) * 4;
+      if ((sd.vx > 0 && sd.x > W + 50) || (sd.vx < 0 && sd.x < -50)) {
+        if (--sd.passes <= 0) { sd.gone = true; if (!sands.some(o => !o.gone && !o.falling)) stopTaunt(); }
+        else { sd.vx *= -1; playTaunt(); }
+      }
+    } else { // knocked out of the sky: catch it!
+      sd.vy = Math.min(sd.vy + 260 * dt, 260); sd.y += sd.vy * dt; sd.spin += dt * 5;
+      if (Math.abs(sd.x - baby.x) < 40 && Math.abs(sd.y - (baby.y - 6)) < 36) {
+        if (lives < MAX_LIVES) { lives++; pops.push({ x: sd.x, y: sd.y - 30, life: 0.8, text: '+1 ♥' }); }
+        else { score += 500; pops.push({ x: sd.x, y: sd.y - 30, life: 0.8, text: '+500' }); }
+        sfx.yum(); sd.gone = true;
+      } else if (sd.y > H + 30) sd.gone = true;
+    }
+  });
+  if (sands.length) { sands = sands.filter(sd => !sd.gone); if (!sands.length) sandTimer = 14 + Math.random() * 10; }
+  const hitSand = (x, w, y) => {
+    const sd = sands.find(o => !o.falling && Math.abs(x - o.x) <= w && (y === undefined || Math.abs(y - o.y) < 14));
+    if (!sd) return false;
+    stopTaunt(); sd.falling = true; sd.vy = -60; score += 100 * wave; shake = 0.15;
+    pops.push({ x: sd.x, y: sd.y + 20, life: 0.6, text: 'SPLAT!' }); sfx.splat();
     return true;
   };
 
   bolts.forEach(b => { b.y += b.vy * dt; });
   bolts = bolts.filter(b => {
     if (b.y < -30) return false;
-    if (sand && !sand.falling && Math.abs(b.y - sand.y) < 14 && hitSand(b.x, 32)) return false;
+    if (hitSand(b.x, 32, b.y)) return false;
     if (boss && !boss.dying && boss.mode !== 'enter' && Math.abs(b.x - boss.x) < 56 && Math.abs(b.y - boss.y) < 50) { hurtBoss(1); return false; }
     for (const t of alive) { const p = pos(t); if (t.alive && Math.abs(b.x - p.x) < 22 && Math.abs(b.y - p.y) < 18) { hitTurtle(t); return false; } }
     return true;
@@ -390,7 +427,7 @@ function update(dt) {
     if (!l.hit) { // eye lasers hit every turtle in a narrow column
       l.hit = true;
       alive.forEach(t => { if (t.alive && Math.abs(pos(t).x - l.x) < 26) hitTurtle(t); });
-      hitSand(l.x, 34);
+      while (hitSand(l.x, 34));
       if (boss && !boss.dying && boss.mode !== 'enter' && Math.abs(l.x - boss.x) < 60) hurtBoss(4);
       shake = 0.12;
     }
@@ -408,11 +445,11 @@ function update(dt) {
   if (!boss && !turtles.some(t => t.alive)) { wave++; score += 100; newWave(); }
 }
 
-// ---------- THE PUG (boss) ----------
+// ---------- BOSSES: Capy the pug and Baby Sara ----------
 function hurtBoss(n) {
   boss.hp -= n; boss.flash = 0.12; sfx.bonk();
   if (boss.hp <= 0) {
-    boss.hp = 0; boss.dying = 2.2; boss.mode = 'dead'; sfx.woof(); shake = 0.6;
+    boss.hp = 0; boss.dying = 2.2; boss.mode = 'dead'; boss.kind === 'pug' ? sfx.woof() : sfx.cry(); shake = 0.6;
     score += 1000 * boss.lvl;
     turtles.forEach(t => { if (t.alive) { t.alive = false; const p = pos(t); pops.push({ x: p.x, y: p.y, life: 0.5, flip: true }); } });
     spits = [];
@@ -423,19 +460,21 @@ function bossAttack() {
   const moves = ['drool', 'woof', 'tongue', 'charge'];
   if (b.hp < b.max * 0.75 && turtles.filter(t => t.alive && t.minion).length < 4) moves.push('summon');
   const m = moves[Math.floor(Math.random() * moves.length)];
-  if (m === 'drool') { // fan of drool
+  const sara = b.kind === 'sara';
+  if (m === 'drool') { // fan of drool (Sara squirts milk)
     const n = angry ? 7 : 5;
-    for (let i = 0; i < n; i++) { const a = (i - (n - 1) / 2) * 0.22; spits.push({ x: b.x, y: b.y + 40, vx: Math.sin(a) * 220, vy: Math.cos(a) * 220 }); }
+    for (let i = 0; i < n; i++) { const a = (i - (n - 1) / 2) * 0.22; spits.push({ x: b.x, y: b.y + 40, vx: Math.sin(a) * 220, vy: Math.cos(a) * 220, milk: sara }); }
     b.mode = 'idle'; b.mouth = 0.4;
   } else if (m === 'woof') { // big slow barks aimed at the baby
     const n = angry ? 3 : 2;
     for (let i = 0; i < n; i++) {
       const dx = baby.x - b.x + (i - (n - 1) / 2) * 70, dy = baby.y - b.y, d = Math.hypot(dx, dy);
-      spits.push({ x: b.x, y: b.y + 40, vx: dx / d * 170, vy: dy / d * 170, woof: true });
+      spits.push({ x: b.x, y: b.y + 40, vx: dx / d * 170, vy: dy / d * 170, woof: true, label: sara ? 'WAAH!' : 'WOOF!' });
     }
-    sfx.woof(); b.mode = 'idle'; b.mouth = 0.5;
-  } else if (m === 'tongue') { // Galaga-style beam: warning, then lick
+    sara ? sfx.cry() : sfx.woof(); b.mode = 'idle'; b.mouth = 0.5;
+  } else if (m === 'tongue') { // Galaga-style beam: warning, then fire (Capy's tongue laser, Sara's eye lasers)
     b.mode = 'tongueWarn'; b.modeT = 0.9; b.beamX = b.x;
+    if (!sara) sfx.snort();
   } else if (m === 'charge') { // swoop down at the baby and back
     b.mode = 'charge'; b.targetX = baby.x; b.vy = 380 + b.lvl * 40;
   } else { // call in flying turtle minions
@@ -452,8 +491,8 @@ function updateBoss(dt) {
   b.t += dt; b.flash -= dt; b.mouth = Math.max(0, (b.mouth || 0) - dt);
   if (b.mode === 'dead') {
     b.dying -= dt; b.y -= 20 * dt;
-    if (Math.random() < dt * 8) pops.push({ x: b.x + (Math.random() - 0.5) * 120, y: b.y + (Math.random() - 0.5) * 90, life: 0.5, text: 'YIP!' });
-    if (b.dying <= 0) { boss = null; wave++; score += 100; newWave(); banner = { text: 'PUG DEFEATED!', life: 2 }; }
+    if (Math.random() < dt * 8) pops.push({ x: b.x + (Math.random() - 0.5) * 120, y: b.y + (Math.random() - 0.5) * 90, life: 0.5, text: b.kind === 'pug' ? 'YIP!' : 'WAAH!' });
+    if (b.dying <= 0) { const nm = b.name; boss = null; wave++; score += 100; newWave(); banner = { text: nm + ' DEFEATED!', life: 2 }; }
     return;
   }
   if (b.mode === 'enter') { b.y += 120 * dt; if (b.y >= b.homeY) { b.y = b.homeY; b.mode = 'idle'; } return; }
@@ -478,6 +517,7 @@ function updateBoss(dt) {
 }
 function drawBoss() {
   const b = boss;
+  if (b.kind === 'sara') { drawSara(b); drawBossBar(b); return; }
   if (b.mode === 'tongueWarn' || b.mode === 'tongue') { // tongue beam
     const warn = b.mode === 'tongueWarn';
     ctx.fillStyle = warn ? (Math.floor(b.t * 12) % 2 ? '#ff8fb366' : '#ff8fb322') : '#ff6f9f';
@@ -519,13 +559,67 @@ function drawBoss() {
   ctx.fillStyle = '#ffd23f'; ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.moveTo(-22, -46); ctx.lineTo(-22, -66); ctx.lineTo(-11, -56); ctx.lineTo(0, -72); ctx.lineTo(11, -56); ctx.lineTo(22, -66); ctx.lineTo(22, -46); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.restore();
-  // health bar along the bottom
+  drawBossBar(b);
+}
+function drawBossBar(b) {
+  const angry = b.hp < b.max / 2;
   if (b.mode !== 'dead') {
     const bw = 300, x0 = (W - bw) / 2, y0 = H - 16;
     ctx.fillStyle = '#1d2a44'; ctx.fillRect(x0 - 3, y0 - 3, bw + 6, 14);
     ctx.fillStyle = angry ? '#ff2d55' : '#ffb000'; ctx.fillRect(x0, y0, bw * b.hp / b.max, 8);
-    text('PUG', x0 - 8, y0 + 9, 12, '#1d2a44', 'right');
+    text(b.name, x0 - 8, y0 + 9, 12, '#1d2a44', 'right');
   }
+}
+function drawSara(b) {
+  const angry = b.hp < b.max / 2, lasering = b.mode === 'tongueWarn' || b.mode === 'tongue';
+  if (lasering) { // twin eye lasers, like Baby Zuccio's
+    const warn = b.mode === 'tongueWarn';
+    [-1, 1].forEach(sd => {
+      const x = b.beamX + sd * 12;
+      ctx.fillStyle = warn ? (Math.floor(b.t * 12) % 2 ? '#ff2d5555' : '#ff2d5522') : '#ff2d55';
+      ctx.fillRect(x - (warn ? 6 : 9), b.y, warn ? 12 : 18, H);
+      if (!warn) { ctx.fillStyle = '#ffffff'; ctx.fillRect(x - 3, b.y, 6, H); }
+    });
+  }
+  ctx.save(); ctx.translate(b.x, b.y);
+  if (b.mode === 'dead') ctx.rotate(Math.sin(b.t * 30) * 0.15);
+  ctx.strokeStyle = '#1d2a44'; ctx.lineWidth = 3;
+  // pigtails with bows
+  [-1, 1].forEach(sd => {
+    ctx.fillStyle = '#7a4a2a'; ctx.beginPath(); ctx.ellipse(sd * 62, -18, 14, 22, sd * 0.5, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ff6fb5';
+    ctx.beginPath(); ctx.moveTo(sd * 50, -36); ctx.lineTo(sd * 36, -48); ctx.lineTo(sd * 38, -26); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sd * 50, -36); ctx.lineTo(sd * 64, -50); ctx.lineTo(sd * 66, -28); ctx.closePath(); ctx.fill(); ctx.stroke();
+  });
+  // head
+  ctx.fillStyle = b.flash > 0 ? '#ffffff' : '#ffd9b8';
+  ctx.beginPath(); ctx.arc(0, 0, 52, 0, 7); ctx.fill(); ctx.stroke();
+  // hair fringe
+  ctx.fillStyle = '#7a4a2a'; ctx.beginPath(); ctx.ellipse(0, -40, 34, 14, 0, Math.PI, 0); ctx.fill();
+  // cheeks
+  ctx.fillStyle = '#ff9fb588'; [-1, 1].forEach(sd => { ctx.beginPath(); ctx.arc(sd * 32, 14, 9, 0, 7); ctx.fill(); });
+  // eyes with lashes; glow red when lasering
+  const look = Math.max(-4, Math.min(4, (baby.x - b.x) / 40));
+  [-1, 1].forEach(sd => {
+    ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.ellipse(sd * 18, -6, 10, 12, 0, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = lasering ? '#ff2d55' : '#1d2a44'; ctx.beginPath(); ctx.arc(sd * 18 + look, -4, 6, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#1d2a44'; ctx.lineWidth = 2;
+    for (let k = -1; k <= 1; k++) { ctx.beginPath(); ctx.moveTo(sd * 18 + k * 6, -17); ctx.lineTo(sd * 18 + k * 9, -24); ctx.stroke(); }
+    if (angry) { ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(sd * 30, -28); ctx.lineTo(sd * 8, -20); ctx.stroke(); }
+    ctx.lineWidth = 3;
+  });
+  // mouth: pacifier, or a big crying mouth when attacking
+  if (b.mouth > 0) {
+    ctx.fillStyle = '#7a1f2b'; ctx.beginPath(); ctx.ellipse(0, 26, 14, 11, 0, 0, 7); ctx.fill(); ctx.stroke();
+  } else {
+    ctx.fillStyle = '#ff6fb5'; ctx.beginPath(); ctx.ellipse(0, 24, 16, 7, 0, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff36b'; ctx.beginPath(); ctx.arc(0, 32, 6, 0, 7); ctx.fill(); ctx.stroke();
+  }
+  // tiara, because she's the boss
+  ctx.fillStyle = '#ff6fb5'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(-20, -48); ctx.lineTo(-14, -64); ctx.lineTo(-6, -54); ctx.lineTo(0, -70); ctx.lineTo(6, -54); ctx.lineTo(14, -64); ctx.lineTo(20, -48); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#7fe0ff'; ctx.beginPath(); ctx.arc(0, -58, 3.5, 0, 7); ctx.fill();
+  ctx.restore();
 }
 function ouch() {
   lives--; baby.hurt = 1.5; shake = 0.3; sfx.ouch();
@@ -573,7 +667,7 @@ function drawTurtle(t) {
   ctx.closePath(); ctx.stroke();
   ctx.restore();
 }
-function drawSandwich() {
+function drawSandwich(sand) {
   const { x, y } = sand;
   ctx.save(); ctx.translate(x, y);
   if (sand.falling) ctx.rotate(Math.sin(sand.spin) * 0.6);
@@ -653,10 +747,10 @@ function draw() {
 
   turtles.forEach(t => t.alive && drawTurtle(t));
   if (boss) drawBoss();
-  if (sand) drawSandwich();
+  sands.forEach(drawSandwich);
   ctx.fillStyle = '#6fcf3f'; ctx.strokeStyle = '#1d2a44'; ctx.lineWidth = 1.5;
-  spits.forEach(s => { if (!s.woof) { ctx.beginPath(); ctx.ellipse(s.x, s.y, 4, 7, 0, 0, 7); ctx.fill(); ctx.stroke(); } });
-  spits.forEach(s => { if (s.woof) text('WOOF!', s.x, s.y + 6, 20 + Math.sin(performance.now() / 60) * 2, '#8a5a2b'); });
+  spits.forEach(s => { if (!s.woof) { ctx.fillStyle = s.milk ? '#ffffff' : '#6fcf3f'; ctx.beginPath(); ctx.ellipse(s.x, s.y, 4, 7, 0, 0, 7); ctx.fill(); ctx.stroke(); } });
+  spits.forEach(s => { if (s.woof) text(s.label || 'WOOF!', s.x, s.y + 6, 20 + Math.sin(performance.now() / 60) * 2, s.label === 'WAAH!' ? '#d6336c' : '#8a5a2b'); });
   bolts.forEach(drawBolt);
   lasers.forEach(drawLaser);
   pops.forEach(p => { ctx.globalAlpha = p.life * 2; text(p.text || (p.flip ? 'BONK!' : 'TINK'), p.x, p.y, p.text ? 18 : 14, p.text ? '#e8473c' : '#ff6b1a'); ctx.globalAlpha = 1; });
@@ -713,7 +807,16 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && sta
 let playerName = '';
 try { playerName = localStorage.getItem('bvt-name') || ''; } catch (e) {}
 $('name').value = playerName;
+// typing "Baby Zuccio" gets struck by lightning and earns a bolt
+function zapName() {
+  const lbl = $('nameLabel');
+  lbl.classList.remove('zapping'); void lbl.offsetWidth; lbl.classList.add('zapping');
+  sfx.zap(); setTimeout(() => sfx.zap(), 120);
+  setTimeout(() => { $('name').value = 'Baby Zuccio⚡'; $('name').dispatchEvent(new Event('input')); }, 260);
+  setTimeout(() => lbl.classList.remove('zapping'), 800);
+}
 $('name').addEventListener('input', () => {
+  if ($('name').value.trim().toLowerCase() === 'baby zuccio') zapName();
   playerName = $('name').value.trim().slice(0, 12);
   try { localStorage.setItem('bvt-name', playerName); } catch (e) {}
   clearTimeout(nameTimer); nameTimer = setTimeout(syncName, 700); // rename on the leaderboard once typing pauses
