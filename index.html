@@ -406,7 +406,7 @@ function update(dt) {
       } else if (sd.y > H + 30) sd.gone = true;
     }
   });
-  if (sands.length) { sands = sands.filter(sd => !sd.gone); if (!sands.length) sandTimer = 14 + Math.random() * 10; }
+  if (sands.length) { sands = sands.filter(sd => !sd.gone); if (!sands.length) sandTimer = (wave >= 5 ? 11 : 14) + Math.random() * (wave >= 5 ? 8 : 10); } // a little more often from wave 5
   const hitSand = (x, w, y) => {
     const sd = sands.find(o => !o.falling && Math.abs(x - o.x) <= w && (y === undefined || Math.abs(y - o.y) < 14));
     if (!sd) return false;
