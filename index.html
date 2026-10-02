@@ -175,6 +175,9 @@ const sfx = {
   laser() { const t = audio().currentTime; tone(1800, t, 0.18, 'sawtooth', 0.06, { slide: 300 }); },
   bonk() { const t = audio().currentTime; tone(500, t, 0.15, 'triangle', 0.25, { slide: 120 }); },
   dive() { const t = audio().currentTime; tone(1200, t, 0.45, 'sine', 0.08, { slide: 300 }); },
+  sandwich() { const t = audio().currentTime; [0, 4, 7, 12].forEach((n, i) => tone(semi(n + 12), t + i * 0.05, 0.12, 'square', 0.05)); },
+  splat() { const t = audio().currentTime; noise(t, 0.2, 0.2, 400); tone(300, t, 0.3, 'triangle', 0.2, { slide: 900 }); },
+  yum() { const t = audio().currentTime; [12, 16, 19, 24, 28].forEach((n, i) => tone(semi(n), t + i * 0.08, 0.2, 'triangle', 0.2)); },
   ouch() { const t = audio().currentTime; tone(600, t, 0.5, 'square', 0.12, { slide: 80 }); },
 };
 
@@ -184,6 +187,9 @@ try { best = +localStorage.getItem('bvt-best-2') || 0; } catch (e) {}
 const baby = { x: W / 2, y: H - 60, w: 50, cool: 0, lcool: 0, hurt: 0 };
 let turtles = [], bolts = [], lasers = [], spits = [], pops = [], clouds = [];
 let dir = 1, tSpeed = 30, shake = 0, diveTimer = 3;
+// the flying baguette sandwich: zips across the top; shoot it and catch it for a heart
+let sand = null, sandTimer = 10;
+const MAX_LIVES = 3;
 // where a turtle actually is: its formation slot, or its dive path
 const pos = t => t.dive || t;
 const keys = {};
@@ -193,14 +199,14 @@ for (let i = 0; i < 6; i++) clouds.push({ x: Math.random() * W, y: Math.random()
 function newWave() {
   turtles = [];
   const rows = Math.min(3 + wave, 6), cols = 7;
-  const divers = Math.min(2 + wave, 7);
+  const divers = wave >= 3 ? Math.min(wave, 7) : 0; // flying turtles join from wave 3
   for (let i = 0; i < divers; i++)
-    turtles.push({ x: 240 + (i - (divers - 1) / 2) * 58, y: 70, alive: true, hp: 1, wob: Math.random() * 6, diver: true, dive: null });
+    turtles.push({ x: 240 + (i - (divers - 1) / 2) * 58, y: 82, alive: true, hp: 1, wob: Math.random() * 6, diver: true, dive: null });
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
-    turtles.push({ x: 60 + c * 58, y: 120 + r * 46, alive: true, hp: r === 0 && wave > 1 ? 2 : 1, wob: Math.random() * 6 });
+    turtles.push({ x: 60 + c * 58, y: 128 + r * 46, alive: true, hp: r === 0 && wave > 1 ? 2 : 1, wob: Math.random() * 6 });
   diveTimer = 2.5; dir = 1; tSpeed = 26 + wave * 8; spits = []; bolts = []; lasers = [];
 }
-function reset() { score = 0; lives = 3; wave = 1; baby.x = W / 2; baby.hurt = 0; newWave(); state = 'play'; startMusic(); }
+function reset() { sand = null; sandTimer = 10; score = 0; lives = 3; wave = 1; baby.x = W / 2; baby.hurt = 0; newWave(); state = 'play'; startMusic(); }
 
 function zigzag(x, y) { const pts = []; for (let i = 0; i < 6; i++) pts.push((Math.random() - 0.5) * 10); return { x, y, pts, vy: -520 }; }
 function fireBolts() {
@@ -276,9 +282,39 @@ function update(dt) {
     if (t.alive && !t.dive) spits.push({ x: t.x, y: t.y + 16, vy: 150 + wave * 15 });
   }
 
+  // baguette sandwich
+  if (!sand) {
+    sandTimer -= dt;
+    if (sandTimer <= 0) {
+      const from = Math.random() < 0.5 ? -1 : 1;
+      sand = { x: from < 0 ? -50 : W + 50, y: 50, vx: -from * (190 + wave * 15), passes: 2 + Math.floor(Math.random() * 3), falling: false, vy: 0, spin: 0, t: 0 };
+      sfx.sandwich();
+    }
+  } else if (!sand.falling) {
+    sand.t += dt; sand.x += sand.vx * dt; sand.y = 50 + Math.sin(sand.t * 6) * 4;
+    if ((sand.vx > 0 && sand.x > W + 50) || (sand.vx < 0 && sand.x < -50)) {
+      if (--sand.passes <= 0) { sand = null; sandTimer = 14 + Math.random() * 10; }
+      else { sand.vx *= -1; sfx.sandwich(); }
+    }
+  } else { // knocked out of the sky: catch it!
+    sand.vy = Math.min(sand.vy + 260 * dt, 260); sand.y += sand.vy * dt; sand.spin += dt * 5;
+    if (Math.abs(sand.x - baby.x) < 40 && Math.abs(sand.y - (baby.y - 6)) < 36) {
+      if (lives < MAX_LIVES) { lives++; pops.push({ x: sand.x, y: sand.y - 30, life: 0.8, text: '+1 ♥' }); }
+      else { score += 500; pops.push({ x: sand.x, y: sand.y - 30, life: 0.8, text: '+500' }); }
+      sfx.yum(); sand = null; sandTimer = 16 + Math.random() * 10;
+    } else if (sand.y > H + 30) { sand = null; sandTimer = 16 + Math.random() * 10; }
+  }
+  const hitSand = (x, w) => {
+    if (!sand || sand.falling || Math.abs(x - sand.x) > w) return false;
+    sand.falling = true; sand.vy = -60; score += 100 * wave; shake = 0.15;
+    pops.push({ x: sand.x, y: sand.y + 20, life: 0.6, text: 'SPLAT!' }); sfx.splat();
+    return true;
+  };
+
   bolts.forEach(b => { b.y += b.vy * dt; });
   bolts = bolts.filter(b => {
     if (b.y < -30) return false;
+    if (sand && !sand.falling && Math.abs(b.y - sand.y) < 14 && hitSand(b.x, 32)) return false;
     for (const t of alive) { const p = pos(t); if (t.alive && Math.abs(b.x - p.x) < 22 && Math.abs(b.y - p.y) < 18) { hitTurtle(t); return false; } }
     return true;
   });
@@ -286,6 +322,7 @@ function update(dt) {
     if (!l.hit) { // eye lasers hit every turtle in a narrow column
       l.hit = true;
       alive.forEach(t => { if (t.alive && Math.abs(pos(t).x - l.x) < 26) hitTurtle(t); });
+      hitSand(l.x, 34);
       shake = 0.12;
     }
     return (l.life -= dt) > 0;
@@ -346,6 +383,30 @@ function drawTurtle(t) {
   ctx.closePath(); ctx.stroke();
   ctx.restore();
 }
+function drawSandwich() {
+  const { x, y } = sand;
+  ctx.save(); ctx.translate(x, y);
+  if (sand.falling) ctx.rotate(Math.sin(sand.spin) * 0.6);
+  else ctx.scale(sand.vx > 0 ? 1 : -1, 1);
+  ctx.strokeStyle = '#1d2a44'; ctx.lineWidth = 2;
+  if (!sand.falling) { // little wings
+    const f = 0.5 + Math.abs(Math.sin(sand.t * 18)) * 0.7;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.ellipse(-6, -12, 12, 6 * f, -0.4, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(8, -12, 12, 6 * f, 0.4, 0, 7); ctx.fill(); ctx.stroke();
+  }
+  // bottom bun, fillings, top bun
+  ctx.fillStyle = '#d99a4e'; ctx.beginPath(); ctx.roundRect(-30, 2, 60, 9, 5); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#5cc04a'; ctx.beginPath(); ctx.moveTo(-30, 2);
+  for (let i = 0; i <= 12; i++) ctx.lineTo(-30 + i * 5, i % 2 ? 5 : 0);
+  ctx.lineTo(30, -2); ctx.lineTo(-30, -2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#e8473c'; [-18, -2, 14].forEach(cx => { ctx.beginPath(); ctx.arc(cx, -2, 4, Math.PI, 0); ctx.fill(); });
+  ctx.fillStyle = '#f2c14e'; ctx.fillRect(-26, -4, 52, 3); // cheese
+  ctx.fillStyle = '#e0a458'; ctx.beginPath(); ctx.ellipse(0, -8, 31, 8, 0, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#a8662a'; ctx.lineWidth = 2;
+  [-16, -4, 8, 20].forEach(sx => { ctx.beginPath(); ctx.moveTo(sx - 4, -9); ctx.lineTo(sx + 3, -14); ctx.stroke(); }); // baguette slashes
+  ctx.restore();
+}
 function drawBaby() {
   if (baby.hurt > 0 && Math.floor(baby.hurt * 10) % 2) return;
   const { x, y } = baby;
@@ -401,11 +462,12 @@ function draw() {
   clouds.forEach(drawCloud);
 
   turtles.forEach(t => t.alive && drawTurtle(t));
+  if (sand) drawSandwich();
   ctx.fillStyle = '#6fcf3f'; ctx.strokeStyle = '#1d2a44'; ctx.lineWidth = 1.5;
   spits.forEach(s => { ctx.beginPath(); ctx.ellipse(s.x, s.y, 4, 7, 0, 0, 7); ctx.fill(); ctx.stroke(); });
   bolts.forEach(drawBolt);
   lasers.forEach(drawLaser);
-  pops.forEach(p => { ctx.globalAlpha = p.life * 2; text(p.flip ? 'BONK!' : 'TINK', p.x, p.y, 14, '#ff6b1a'); ctx.globalAlpha = 1; });
+  pops.forEach(p => { ctx.globalAlpha = p.life * 2; text(p.text || (p.flip ? 'BONK!' : 'TINK'), p.x, p.y, p.text ? 18 : 14, p.text ? '#e8473c' : '#ff6b1a'); ctx.globalAlpha = 1; });
   if (state !== 'title') drawBaby();
   ctx.restore();
 
