@@ -36,6 +36,7 @@
   #stage { position: relative; }
   canvas { display: block; width: 100%; height: 100%; box-sizing: border-box; border: 3px solid var(--ink); border-radius: 12px; background: var(--sky-top); }
   .ov { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 10px; padding: 16px 16px 9%; box-sizing: border-box; }
+  .ov[hidden] { display: none; }
   .ov.center { justify-content: center; }
   .ov.dim { background: #1d2a4466; border-radius: 12px; }
   .card { background: var(--card); border: 3px solid var(--ink); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; align-items: center; width: min(320px, 100%); box-sizing: border-box; text-align: center; }
@@ -66,7 +67,7 @@
   </div>
 </div>
 <div id="wrap"><div id="stage">
-  <canvas id="c" width="480" height="640"></canvas>
+  <canvas id="c" width="480" height="720"></canvas>
   <div class="ov" id="menu">
     <label for="name">Your name <input id="name" maxlength="12" placeholder="Player" autocomplete="off"></label>
     <button class="big" id="play">Play</button>
@@ -102,7 +103,7 @@
 
 <script>
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
-const W = 480, H = 640;
+const W = 480, H = 720;
 
 // ---------- AUDIO ----------
 let ac = null, musicOn = true, musicTimer = null, nextNote = 0, step = 0;
@@ -173,6 +174,7 @@ const sfx = {
   zap() { const t = audio().currentTime; noise(t, 0.15, 0.12, 3000); tone(900, t, 0.12, 'square', 0.05, { slide: 200 }); },
   laser() { const t = audio().currentTime; tone(1800, t, 0.18, 'sawtooth', 0.06, { slide: 300 }); },
   bonk() { const t = audio().currentTime; tone(500, t, 0.15, 'triangle', 0.25, { slide: 120 }); },
+  dive() { const t = audio().currentTime; tone(1200, t, 0.45, 'sine', 0.08, { slide: 300 }); },
   ouch() { const t = audio().currentTime; tone(600, t, 0.5, 'square', 0.12, { slide: 80 }); },
 };
 
@@ -181,7 +183,9 @@ let state = 'title', score = 0, lives = 3, wave = 1, best = 0;
 try { best = +localStorage.getItem('bvt-best') || 0; } catch (e) {}
 const baby = { x: W / 2, y: H - 60, w: 50, cool: 0, lcool: 0, hurt: 0 };
 let turtles = [], bolts = [], lasers = [], spits = [], pops = [], clouds = [];
-let dir = 1, tSpeed = 30, shake = 0;
+let dir = 1, tSpeed = 30, shake = 0, diveTimer = 3;
+// where a turtle actually is: its formation slot, or its dive path
+const pos = t => t.dive || t;
 const keys = {};
 
 for (let i = 0; i < 6; i++) clouds.push({ x: Math.random() * W, y: Math.random() * H * 0.8, s: 0.6 + Math.random() * 0.8, v: 6 + Math.random() * 10 });
@@ -189,9 +193,12 @@ for (let i = 0; i < 6; i++) clouds.push({ x: Math.random() * W, y: Math.random()
 function newWave() {
   turtles = [];
   const rows = Math.min(3 + wave, 6), cols = 7;
+  const divers = Math.min(2 + wave, 7);
+  for (let i = 0; i < divers; i++)
+    turtles.push({ x: 240 + (i - (divers - 1) / 2) * 58, y: 70, alive: true, hp: 1, wob: Math.random() * 6, diver: true, dive: null });
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
-    turtles.push({ x: 60 + c * 58, y: 70 + r * 46, alive: true, hp: r === 0 && wave > 1 ? 2 : 1, wob: Math.random() * 6 });
-  dir = 1; tSpeed = 26 + wave * 8; spits = []; bolts = []; lasers = [];
+    turtles.push({ x: 60 + c * 58, y: 120 + r * 46, alive: true, hp: r === 0 && wave > 1 ? 2 : 1, wob: Math.random() * 6 });
+  diveTimer = 2.5; dir = 1; tSpeed = 26 + wave * 8; spits = []; bolts = []; lasers = [];
 }
 function reset() { score = 0; lives = 3; wave = 1; baby.x = W / 2; baby.hurt = 0; newWave(); state = 'play'; startMusic(); }
 
@@ -207,8 +214,9 @@ function fireLaser() {
 
 function hitTurtle(t) {
   t.hp--; sfx.bonk();
-  if (t.hp <= 0) { t.alive = false; score += 10 * wave; pops.push({ x: t.x, y: t.y, life: 0.5, flip: true }); }
-  else pops.push({ x: t.x, y: t.y, life: 0.25 });
+  const p = pos(t);
+  if (t.hp <= 0) { t.alive = false; score += (t.dive ? 50 : t.diver ? 20 : 10) * wave; pops.push({ x: p.x, y: p.y, life: 0.5, flip: true }); }
+  else pops.push({ x: p.x, y: p.y, life: 0.25 });
 }
 
 function update(dt) {
@@ -229,24 +237,55 @@ function update(dt) {
   const alive = turtles.filter(t => t.alive);
   const speed = tSpeed + (1 - alive.length / turtles.length) * 90;
   let edge = false;
-  alive.forEach(t => { t.x += dir * speed * dt; t.wob += dt * 8; if (t.x < 26 || t.x > W - 26) edge = true; });
+  alive.forEach(t => { t.x += dir * speed * dt; t.wob += dt * 8; if (!t.dive && (t.x < 26 || t.x > W - 26)) edge = true; });
   if (edge) { dir *= -1; alive.forEach(t => { t.x += dir * 4; t.y += 18; }); }
+  // flying turtles peel off and swoop down Galaga-style
+  diveTimer -= dt;
+  if (diveTimer <= 0) {
+    diveTimer = Math.max(1, 3.2 - wave * 0.35) * (0.7 + Math.random() * 0.6);
+    const ready = alive.filter(t => t.diver && !t.dive);
+    if (ready.length) {
+      const t = ready[Math.floor(Math.random() * ready.length)];
+      const side = t.x < W / 2 ? -1 : 1;
+      t.dive = { x: t.x, y: t.y, vx: side * 140, vy: -230, phase: 'swoop', time: 0, spat: 0, ang: 0 };
+      sfx.dive();
+    }
+  }
+  alive.forEach(t => {
+    const d = t.dive; if (!d) return;
+    d.time += dt;
+    if (d.phase === 'swoop') {
+      d.vy = Math.min(d.vy + 520 * dt, 260 + wave * 20);         // arc up, then plunge
+      const want = (baby.x - d.x) * 1.6 + Math.sin(d.time * 5) * 120; // home in on the baby, wiggling
+      d.vx += (want - d.vx) * Math.min(1, dt * 2.5);
+      d.x = Math.max(16, Math.min(W - 16, d.x + d.vx * dt)); d.y += d.vy * dt;
+      d.ang = Math.atan2(d.vy, d.vx) - Math.PI / 2;
+      if (d.spat < 2 && d.y > 200 + d.spat * 140 && d.y < baby.y - 120) { d.spat++; spits.push({ x: d.x, y: d.y + 16, vy: d.vy + 120 }); }
+      if (baby.hurt <= 0 && Math.abs(d.x - baby.x) < 26 && Math.abs(d.y - (baby.y - 10)) < 34) { t.alive = false; pops.push({ x: d.x, y: d.y, life: 0.5, flip: true }); ouch(); }
+      if (d.y > H + 30) { d.phase = 'home'; d.y = -30; d.x = t.x; }
+    } else { // fly back into its slot from the top
+      const dx = t.x - d.x, dy = t.y - d.y, dist = Math.hypot(dx, dy), step = 260 * dt;
+      d.ang = Math.atan2(dy, dx) - Math.PI / 2;
+      if (dist <= step) t.dive = null; else { d.x += dx / dist * step; d.y += dy / dist * step; }
+    }
+  });
+
   // turtles spit
   if (alive.length && Math.random() < dt * (0.9 + wave * 0.35)) {
     const t = alive[Math.floor(Math.random() * alive.length)];
-    spits.push({ x: t.x, y: t.y + 16, vy: 150 + wave * 15 });
+    if (t.alive && !t.dive) spits.push({ x: t.x, y: t.y + 16, vy: 150 + wave * 15 });
   }
 
   bolts.forEach(b => { b.y += b.vy * dt; });
   bolts = bolts.filter(b => {
     if (b.y < -30) return false;
-    for (const t of alive) if (t.alive && Math.abs(b.x - t.x) < 22 && Math.abs(b.y - t.y) < 18) { hitTurtle(t); return false; }
+    for (const t of alive) { const p = pos(t); if (t.alive && Math.abs(b.x - p.x) < 22 && Math.abs(b.y - p.y) < 18) { hitTurtle(t); return false; } }
     return true;
   });
   lasers = lasers.filter(l => {
     if (!l.hit) { // eye lasers hit every turtle in a narrow column
       l.hit = true;
-      alive.forEach(t => { if (Math.abs(t.x - l.x) < 26) hitTurtle(t); });
+      alive.forEach(t => { if (t.alive && Math.abs(pos(t).x - l.x) < 26) hitTurtle(t); });
       shake = 0.12;
     }
     return (l.life -= dt) > 0;
@@ -258,7 +297,7 @@ function update(dt) {
     return true;
   });
 
-  if (alive.some(t => t.y > baby.y - 40)) { lives = 0; ouch(); }
+  if (alive.some(t => t.alive && t.y > baby.y - 40)) { lives = 0; ouch(); }
   if (!turtles.some(t => t.alive)) { wave++; score += 100; newWave(); }
 }
 function ouch() {
@@ -281,8 +320,16 @@ function drawCloud(c) {
 }
 function drawTurtle(t) {
   const legs = Math.sin(t.wob) * 3;
-  ctx.save(); ctx.translate(t.x, t.y);
-  ctx.fillStyle = '#8fd16a'; ctx.strokeStyle = '#1d2a44'; ctx.lineWidth = 2;
+  const p = pos(t);
+  ctx.save(); ctx.translate(p.x, p.y);
+  if (t.dive) ctx.rotate(t.dive.ang);
+  ctx.strokeStyle = '#1d2a44'; ctx.lineWidth = 2;
+  if (t.diver) { // flapping wings
+    const flap = 0.6 + Math.abs(Math.sin(t.wob * (t.dive ? 2.5 : 1))) * 0.6;
+    ctx.fillStyle = '#ffffff';
+    [-1, 1].forEach(sd => { ctx.beginPath(); ctx.ellipse(sd * 22, -4, 14, 7 * flap, sd * -0.5, 0, 7); ctx.fill(); ctx.stroke(); });
+  }
+  ctx.fillStyle = '#8fd16a';
   // legs
   [[-14, 10], [14, 10], [-14, -6], [14, -6]].forEach(([lx, ly], i) => {
     ctx.beginPath(); ctx.ellipse(lx + (i % 2 ? 4 : -4), ly + (i < 2 ? legs : -legs), 6, 4, 0, 0, 7); ctx.fill(); ctx.stroke();
@@ -291,7 +338,7 @@ function drawTurtle(t) {
   ctx.beginPath(); ctx.arc(0, 16, 8, 0, 7); ctx.fill(); ctx.stroke();
   ctx.fillStyle = '#1d2a44'; ctx.beginPath(); ctx.arc(-3, 18, 1.6, 0, 7); ctx.arc(3, 18, 1.6, 0, 7); ctx.fill();
   // shell
-  ctx.fillStyle = t.hp > 1 ? '#2e6b8f' : '#3f9b4a';
+  ctx.fillStyle = t.diver ? '#e8473c' : t.hp > 1 ? '#2e6b8f' : '#3f9b4a';
   ctx.beginPath(); ctx.ellipse(0, 0, 19, 15, 0, 0, 7); ctx.fill(); ctx.stroke();
   ctx.strokeStyle = '#ffffff66'; ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -435,8 +482,8 @@ hold('tl', 'L'); hold('tr', 'R'); hold('tz', 'Z'); hold('tx', 'X');
 // fit the stage to the space available, keeping 3:4
 function fit() {
   const r = $('wrap').getBoundingClientRect();
-  const w = Math.min(r.width, r.height * 480 / 640);
-  $('stage').style.width = w + 'px'; $('stage').style.height = (w * 640 / 480) + 'px';
+  const w = Math.min(r.width, r.height * W / H);
+  $('stage').style.width = w + 'px'; $('stage').style.height = (w * H / W) + 'px';
 }
 addEventListener('resize', fit); fit();
 
