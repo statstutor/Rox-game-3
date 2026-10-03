@@ -153,10 +153,20 @@ const MEL = [12,null,12,13,12,null,11,12, 15,null,15,16,15,null,13,15, 19,18,19,
 const BASS = [0,null,7,null,0,null,7,null, 3,null,10,null,3,null,10,null, 7,null,14,null,7,null,14,null, 5,null,8,null,7,null,-1,null];
 function scheduleMusic() {
   const fight = boss && boss.mode !== 'dead'; // intense mode until the boss is beaten
-  const a = audio(), spb = 60 / (fight ? 208 : 176) / 4; // 176 bpm sixteenths, faster in boss fights
+  const menu = state === 'title';                // relaxed version of the same tune on the main menu
+  const a = audio(), spb = 60 / (fight ? 208 : menu ? 116 : 176) / 4; // 176 bpm sixteenths, faster in boss fights
   while (nextNote < a.currentTime + 0.12) {
     const s = step % 32, bar = Math.floor(step / 32) % 4;
     const up = (bar === 3 ? 5 : bar === 2 ? 2 : 0) + (fight ? 3 : 0); // key change for drama
+    if (menu) { // same melody and bass, played gently: music-box lead, soft bass, light shaker
+      if (MEL[s] !== null) tone(semi(MEL[s] + up + 12), nextNote, 0.35, 'triangle', 0.1);
+      if (MEL[s] !== null && s % 4 === 0) tone(semi(MEL[s] + up), nextNote, 0.5, 'sine', 0.04);
+      if (BASS[s] !== null && s % 4 === 0) tone(semi(BASS[s] + up - 24), nextNote, spb * 3, 'triangle', 0.16);
+      if (s % 8 === 0) tone(110, nextNote, 0.1, 'sine', 0.12, { slide: 50 });
+      if (s % 4 === 2) noise(nextNote, 0.04, 0.025, 6000);
+      if (s === 31 && bar === 3) tone(semi(24 + up), nextNote, 0.4, 'sine', 0.04, { slide: semi(36 + up) }); // little slide whistle
+      nextNote += spb; step++; continue;
+    }
     if (MEL[s] !== null) tone(semi(MEL[s] + up), nextNote, spb * 1.6, 'sawtooth', 0.09, { kazoo: true });
     if (BASS[s] !== null) tone(semi(BASS[s] + up - 24), nextNote, spb * 1.4, 'square', 0.08);
     if (s % 4 === 0) tone(150, nextNote, 0.12, 'sine', 0.35, { slide: 40 });
@@ -235,7 +245,7 @@ const musicBtn = document.getElementById('music');
 musicBtn.onclick = () => {
   musicOn = !musicOn;
   musicBtn.textContent = 'Music: ' + (musicOn ? 'ON' : 'OFF');
-  if (musicOn && state === 'play') startMusic(); else stopMusic();
+  if (musicOn && (state === 'play' || state === 'title')) { audio(); startMusic(); } else stopMusic();
   musicBtn.blur();
 };
 const sfx = {
@@ -322,6 +332,7 @@ function newWave() {
   diveTimer = 2.5; dir = 1; tSpeed = 26 + wave * 8; spits = []; bolts = []; lasers = [];
 }
 function reset() {
+  step = 0; // game tune starts from the top
   sands = []; sandTimer = 10; score = 0; lives = 3; wave = 1; baby.x = W / 2; baby.hurt = 0; newWave(); state = 'play'; startMusic(); }
 
 function zigzag(x, y) { const pts = []; for (let i = 0; i < 6; i++) pts.push((Math.random() - 0.5) * 10); return { x, y, pts, vy: -520 }; }
@@ -806,7 +817,9 @@ function show(name) {
 }
 function clearKeys() { for (const k in keys) keys[k] = false; }
 function play() { audio(); clearKeys(); reset(); show(null); }
-function toMenu() { state = 'title'; stopMusic(); stopTaunt(); clearKeys(); show('menu'); }
+function toMenu() { state = 'title'; stopMusic(); stopTaunt(); clearKeys(); show('menu'); startMusic(); }
+// browsers only allow sound after a tap or key press, so menu music starts on the first one
+['pointerdown', 'keydown'].forEach(ev => addEventListener(ev, () => { if (state === 'title' && musicOn && !musicTimer) { audio(); startMusic(); } }));
 function togglePause() {
   if (state === 'play') { state = 'paused'; stopMusic(); stopTaunt(); clearKeys(); show('paused'); }
   else if (state === 'paused') { state = 'play'; last = performance.now(); startMusic(); show(null); }
